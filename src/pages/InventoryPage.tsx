@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Search, Package, AlertTriangle } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { fetchLiveStock, StockItem } from "@/lib/api";
+import { fetchInventoryWithCases, StockItem } from "@/lib/api";
 import {
   Table,
   TableBody,
@@ -11,17 +11,28 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { toast } from "sonner";
 
 const LOW_STOCK_THRESHOLD = 3;
+const ITEMS_PER_PAGE = 15;
 
 const InventoryPage = () => {
   const [stock, setStock] = useState<StockItem[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
-    fetchLiveStock()
+    fetchInventoryWithCases()
       .then(setStock)
       .catch(() => toast.error("Failed to load inventory."))
       .finally(() => setLoading(false));
@@ -30,6 +41,33 @@ const InventoryPage = () => {
   const filtered = stock.filter((item) =>
     item.component.toLowerCase().includes(search.toLowerCase()),
   );
+
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const paginatedItems = filtered.slice(
+    startIndex,
+    startIndex + ITEMS_PER_PAGE,
+  );
+
+  // Build page numbers with ellipsis
+  const getPageNumbers = (): (number | "ellipsis")[] => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const pages: (number | "ellipsis")[] = [1];
+    if (currentPage > 3) pages.push("ellipsis");
+    const start = Math.max(2, currentPage - 1);
+    const end = Math.min(totalPages - 1, currentPage + 1);
+    for (let i = start; i <= end; i++) pages.push(i);
+    if (currentPage < totalPages - 2) pages.push("ellipsis");
+    pages.push(totalPages);
+    return pages;
+  };
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -55,14 +93,23 @@ const InventoryPage = () => {
         </div>
       </div>
 
-      <div className="relative mb-6 max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search by component name..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-10"
-        />
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div className="relative max-w-md w-full">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search by component name..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        {!loading && (
+          <p className="text-sm text-muted-foreground whitespace-nowrap">
+            Showing {filtered.length === 0 ? 0 : startIndex + 1}–
+            {Math.min(startIndex + ITEMS_PER_PAGE, filtered.length)} of{" "}
+            {filtered.length} items
+          </p>
+        )}
       </div>
 
       <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
@@ -70,8 +117,9 @@ const InventoryPage = () => {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
-                <TableHead className="font-semibold">#</TableHead>
+                <TableHead className="font-semibold w-12">#</TableHead>
                 <TableHead className="font-semibold">Component</TableHead>
+                <TableHead className="font-semibold">Case</TableHead>
                 <TableHead className="font-semibold text-center">
                   Stock
                 </TableHead>
@@ -81,86 +129,137 @@ const InventoryPage = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading
-                ? Array.from({ length: 6 }).map((_, i) => (
-                    <TableRow key={i}>
-                      {Array.from({ length: 4 }).map((_, j) => (
-                        <TableCell key={j}>
-                          <div className="h-4 w-20 animate-pulse rounded bg-muted" />
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                : filtered.length === 0
-                  ? (
-                      <TableRow>
-                        <TableCell
-                          colSpan={4}
-                          className="h-32 text-center text-muted-foreground"
-                        >
-                          No components found.
-                        </TableCell>
-                      </TableRow>
-                    )
-                  : filtered.map((item, i) => {
-                      const isLow =
-                        item.stock > 0 && item.stock <= LOW_STOCK_THRESHOLD;
-                      const isOut = item.stock === 0;
+              {loading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <TableRow key={i}>
+                    {Array.from({ length: 5 }).map((_, j) => (
+                      <TableCell key={j}>
+                        <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : paginatedItems.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={5}
+                    className="h-32 text-center text-muted-foreground"
+                  >
+                    No components found.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedItems.map((item, i) => {
+                  const isLow =
+                    item.stock > 0 && item.stock <= LOW_STOCK_THRESHOLD;
+                  const isOut = item.stock === 0;
 
-                      return (
-                        <TableRow
-                          key={item.component}
-                          className="hover:bg-muted/30 transition-colors"
-                        >
-                          <TableCell className="text-muted-foreground text-xs">
-                            {i + 1}
-                          </TableCell>
-                          <TableCell className="font-medium text-card-foreground">
-                            {item.component}
-                          </TableCell>
-                          <TableCell
-                            className={`text-center font-mono text-sm font-semibold ${
-                              isOut
-                                ? "text-destructive"
-                                : isLow
-                                  ? "text-secondary"
-                                  : "text-success"
-                            }`}
+                  return (
+                    <TableRow
+                      key={item.component}
+                      className="hover:bg-muted/30 transition-colors"
+                    >
+                      <TableCell className="text-muted-foreground text-xs">
+                        {startIndex + i + 1}
+                      </TableCell>
+                      <TableCell className="font-medium text-card-foreground">
+                        {item.component}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {item.caseName}
+                      </TableCell>
+                      <TableCell
+                        className={`text-center font-mono text-sm font-semibold ${
+                          isOut
+                            ? "text-destructive"
+                            : isLow
+                              ? "text-secondary"
+                              : "text-success"
+                        }`}
+                      >
+                        {item.stock}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {isOut ? (
+                          <Badge variant="destructive" className="text-xs">
+                            Out of stock
+                          </Badge>
+                        ) : isLow ? (
+                          <Badge
+                            variant="outline"
+                            className="text-xs border-secondary text-secondary"
                           >
-                            {item.stock}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {isOut ? (
-                              <Badge
-                                variant="destructive"
-                                className="text-xs"
-                              >
-                                Out of stock
-                              </Badge>
-                            ) : isLow ? (
-                              <Badge
-                                variant="outline"
-                                className="text-xs border-secondary text-secondary"
-                              >
-                                <AlertTriangle className="mr-1 h-3 w-3" />
-                                Low stock
-                              </Badge>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className="text-xs border-success text-success"
-                              >
-                                Available
-                              </Badge>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                            <AlertTriangle className="mr-1 h-3 w-3" />
+                            Low stock
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="text-xs border-success text-success"
+                          >
+                            Available
+                          </Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
             </TableBody>
           </Table>
         </div>
       </div>
+
+      {/* Pagination */}
+      {!loading && totalPages > 1 && (
+        <div className="mt-6">
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className={
+                    currentPage === 1
+                      ? "pointer-events-none opacity-50"
+                      : "cursor-pointer"
+                  }
+                />
+              </PaginationItem>
+
+              {getPageNumbers().map((page, idx) =>
+                page === "ellipsis" ? (
+                  <PaginationItem key={`ellipsis-${idx}`}>
+                    <PaginationEllipsis />
+                  </PaginationItem>
+                ) : (
+                  <PaginationItem key={page}>
+                    <PaginationLink
+                      isActive={page === currentPage}
+                      onClick={() => setCurrentPage(page)}
+                      className="cursor-pointer"
+                    >
+                      {page}
+                    </PaginationLink>
+                  </PaginationItem>
+                ),
+              )}
+
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  }
+                  className={
+                    currentPage === totalPages
+                      ? "pointer-events-none opacity-50"
+                      : "cursor-pointer"
+                  }
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
+      )}
     </div>
   );
 };
