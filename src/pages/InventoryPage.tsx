@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import { Search, Package, AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { fetchInventoryWithCases, invalidateCache, StockItem } from "@/lib/api";
+import {
+  fetchLiveStock,
+  getCachedLiveStock,
+  invalidateCache,
+  StockItem,
+} from "@/lib/api";
 import {
   Table,
   TableBody,
@@ -41,7 +46,7 @@ const InventoryPage = () => {
       setLoading(true);
     }
 
-    fetchInventoryWithCases()
+    fetchLiveStock()
       .then(setStock)
       .catch(() => toast.error("Failed to load inventory."))
       .finally(() => {
@@ -50,8 +55,25 @@ const InventoryPage = () => {
       });
   };
 
+  // Stale-while-revalidate: show cached data instantly, refresh behind
   useEffect(() => {
-    loadStock();
+    const stale = getCachedLiveStock();
+    if (stale && stale.length > 0) {
+      // Render stale data immediately — no loading spinner
+      setStock(stale);
+      setLoading(false);
+      // Silently refresh in the background
+      setRefreshing(true);
+      fetchLiveStock()
+        .then(setStock)
+        .catch(() => {
+          /* keep showing stale data on background error */
+        })
+        .finally(() => setRefreshing(false));
+    } else {
+      // Nothing cached — full loading state
+      loadStock();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

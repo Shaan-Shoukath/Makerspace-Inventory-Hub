@@ -125,7 +125,7 @@ const BorrowPage = () => {
             <Label htmlFor="hubId">Your Hub ID</Label>
             <Input
               id="hubId"
-              placeholder="e.g. HUB101"
+              placeholder="e.g. @dev_devadath"
               value={userHubId}
               onChange={(e) => setUserHubId(e.target.value)}
               maxLength={20}

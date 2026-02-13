@@ -122,7 +122,7 @@ const ReturnPage = () => {
             <div className="flex gap-2">
               <Input
                 id="hubIdReturn"
-                placeholder="e.g. HUB101"
+                placeholder="e.g. @dev_devadath"
                 value={userHubId}
                 onChange={(e) => {
                   setUserHubId(e.target.value);

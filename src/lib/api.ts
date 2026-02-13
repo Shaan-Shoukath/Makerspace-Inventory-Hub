@@ -1,11 +1,19 @@
-// Google Apps Script API service layer
-// All calls go through the deployed Apps Script web app URL from .env
+// API service layer
+// Apps Script handles mutations (borrow, return) + lightweight reads (cases, components, holdings)
+// Google Sheets API handles the heavy read (live stock) — much faster than Apps Script
 
 const BASE_URL = import.meta.env.VITE_APPSCRIPT_URL as string;
+const SHEETS_API_KEY = import.meta.env.VITE_SHEETS_API_KEY as string;
+const SPREADSHEET_ID = import.meta.env.VITE_SPREADSHEET_ID as string;
 
 if (!BASE_URL) {
   console.error(
     "VITE_APPSCRIPT_URL is not set. Create a .env file with your Apps Script deployment URL.",
+  );
+}
+if (!SHEETS_API_KEY || !SPREADSHEET_ID) {
+  console.error(
+    "VITE_SHEETS_API_KEY or VITE_SPREADSHEET_ID is not set. Live stock will fall back to Apps Script.",
   );
 }
 
@@ -22,37 +30,94 @@ export interface StockItem {
   caseName: string;
 }
 
-// ─── Cache ────────────────────────────────────────────────────────────────────
+// ─── Cache (memory + localStorage) ───────────────────────────────────────────
 
 interface CacheEntry<T> {
   data: T;
   timestamp: number;
 }
 
-const cache = new Map<string, CacheEntry<unknown>>();
+const memCache = new Map<string, CacheEntry<unknown>>();
+const STORAGE_PREFIX = "inv-cache:";
 
-const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 function getCached<T>(key: string): T | null {
-  const entry = cache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
-    cache.delete(key);
-    return null;
+  // Memory first
+  const mem = memCache.get(key);
+  if (mem && Date.now() - mem.timestamp <= CACHE_TTL_MS) {
+    return mem.data as T;
   }
-  return entry.data as T;
+  if (mem) memCache.delete(key);
+
+  // Fall back to localStorage
+  try {
+    const raw = localStorage.getItem(STORAGE_PREFIX + key);
+    if (raw) {
+      const entry: CacheEntry<T> = JSON.parse(raw);
+      if (Date.now() - entry.timestamp <= CACHE_TTL_MS) {
+        memCache.set(key, entry); // hydrate memory
+        return entry.data as T;
+      }
+      localStorage.removeItem(STORAGE_PREFIX + key);
+    }
+  } catch {
+    /* ignore parse / quota errors */
+  }
+
+  return null;
+}
+
+/**
+ * Read cached data even if the TTL has expired.
+ * Used for stale-while-revalidate: show old data instantly, refresh behind.
+ */
+function getStaleCached<T>(key: string): T | null {
+  const mem = memCache.get(key);
+  if (mem) return mem.data as T;
+
+  try {
+    const raw = localStorage.getItem(STORAGE_PREFIX + key);
+    if (raw) {
+      const entry: CacheEntry<T> = JSON.parse(raw);
+      memCache.set(key, entry);
+      return entry.data as T;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 function setCache<T>(key: string, data: T): void {
-  cache.set(key, { data, timestamp: Date.now() });
+  const entry: CacheEntry<T> = { data, timestamp: Date.now() };
+  memCache.set(key, entry);
+  try {
+    localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(entry));
+  } catch {
+    /* ignore quota errors */
+  }
 }
 
 /** Force-clear a specific cache key or the entire cache. */
 export function invalidateCache(key?: string): void {
   if (key) {
-    cache.delete(key);
+    memCache.delete(key);
+    try {
+      localStorage.removeItem(STORAGE_PREFIX + key);
+    } catch {
+      /* ignore */
+    }
   } else {
-    cache.clear();
+    memCache.clear();
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k?.startsWith(STORAGE_PREFIX)) localStorage.removeItem(k);
+      }
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -163,9 +228,7 @@ export async function borrowComponent(
     return { success: false, message: data.error };
   }
 
-  // Invalidate stock & component caches after a successful borrow
-  invalidateCache("getLiveStock");
-  invalidateCache(`getComponents:${caseName}`);
+  // No cache invalidation — backend cache auto-clears on borrow; let caching handle stock updates
 
   return {
     success: true,
@@ -208,8 +271,7 @@ export async function returnComponent(
     return { success: false, message: data.error };
   }
 
-  // Invalidate stock cache after a successful return
-  invalidateCache("getLiveStock");
+  // No cache invalidation — backend cache auto-clears on return; let caching handle stock updates
 
   return {
     success: true,
@@ -218,40 +280,64 @@ export async function returnComponent(
 }
 
 /**
- * Fetch live stock for admin/dashboard view.
- * GET ?action=getLiveStock
- * → [{ component: "MG996R Servo", stock: 3 }, ...]
+ * Sheets API response shape for spreadsheets.values.get
  */
-export async function fetchLiveStock(): Promise<StockItem[]> {
-  return cachedGet<StockItem[]>("getLiveStock", { action: "getLiveStock" });
+interface SheetsValuesResponse {
+  range: string;
+  majorDimension: string;
+  values: string[][];
 }
 
 /**
- * Fetch inventory with case names.
- * Builds a component → caseName mapping by fetching all cases and their
- * components, then merges with live stock data.
+ * Fetch live stock via Google Sheets API (fast, read-only).
+ * Falls back to Apps Script if Sheets API keys are missing.
+ *
+ * Sheet columns:  A=Case  B=Component  C=Initial  D=Borrowed  E=Returned  F=Current_Stock
+ * We read A2:F (skip header row) and map to StockItem[].
  */
-export async function fetchInventoryWithCases(): Promise<StockItem[]> {
-  const [cases, rawStock] = await Promise.all([fetchCases(), fetchLiveStock()]);
+export async function fetchLiveStock(): Promise<StockItem[]> {
+  // Return from cache if still fresh
+  const cached = getCached<StockItem[]>("getLiveStock");
+  if (cached) return cached;
 
-  // Build component → caseName mapping
-  const caseComponentPairs = await Promise.all(
-    cases.map(async (caseName) => {
-      const components = await fetchComponentsByCase(caseName);
-      return components.map((comp) => ({ component: comp, caseName }));
-    }),
-  );
-
-  const componentToCaseMap = new Map<string, string>();
-  for (const pairs of caseComponentPairs) {
-    for (const { component, caseName } of pairs) {
-      componentToCaseMap.set(component, caseName);
-    }
+  // Prefer Sheets API for speed; fall back to Apps Script
+  if (SHEETS_API_KEY && SPREADSHEET_ID) {
+    const data = await fetchLiveStockFromSheets();
+    setCache("getLiveStock", data);
+    return data;
   }
 
-  // Merge case names into stock items
-  return rawStock.map((item) => ({
-    ...item,
-    caseName: componentToCaseMap.get(item.component) ?? "Unknown",
-  }));
+  // Fallback: Apps Script
+  const data = await get<StockItem[]>({ action: "getLiveStock" });
+  setCache("getLiveStock", data);
+  return data;
+}
+
+async function fetchLiveStockFromSheets(): Promise<StockItem[]> {
+  const range = encodeURIComponent("Live_Stock!A2:F");
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${range}?key=${SHEETS_API_KEY}`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Sheets API request failed: ${res.status} ${res.statusText}`);
+  }
+
+  const json: SheetsValuesResponse = await res.json();
+  const rows = json.values ?? [];
+
+  return rows
+    .filter((row) => row[1]?.trim()) // skip rows with no component name
+    .map((row) => ({
+      caseName: (row[0] ?? "Unknown").trim(),
+      component: row[1].trim(),
+      stock: parseInt(row[5] ?? "0", 10) || 0,
+    }));
+}
+
+/**
+ * Return cached live stock instantly (even if stale / expired).
+ * Used by the Admin/Inventory page for stale-while-revalidate.
+ */
+export function getCachedLiveStock(): StockItem[] | null {
+  return getStaleCached<StockItem[]>("getLiveStock");
 }
