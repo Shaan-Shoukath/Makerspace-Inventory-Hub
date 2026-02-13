@@ -341,3 +341,88 @@ async function fetchLiveStockFromSheets(): Promise<StockItem[]> {
 export function getCachedLiveStock(): StockItem[] | null {
   return getStaleCached<StockItem[]>("getLiveStock");
 }
+
+// ─── TinkerHub Check-In Validation ───────────────────────────────────────────
+
+const TINKERHUB_API = "https://app-api.tinkerhub.org";
+
+interface TinkerHubMember {
+  id: number;
+  name: string;
+  username: string;
+  avatar: string;
+  [key: string]: unknown;
+}
+
+interface ActiveCheckIn {
+  mid: number;
+  membershipId: number;
+  name: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Look up a TinkerHub member by username.
+ * GET https://app-api.tinkerhub.org/v1/public/member/username/{username}
+ * Returns the member object (we mainly need `id`).
+ */
+export async function fetchMemberByUsername(
+  username: string,
+): Promise<TinkerHubMember> {
+  const cleanUsername = username.replace(/^@/, "").trim();
+  validateNotEmpty(cleanUsername, "Username");
+
+  const res = await fetch(
+    `${TINKERHUB_API}/v1/public/member/username/${encodeURIComponent(cleanUsername)}`,
+  );
+  if (!res.ok) {
+    throw new Error("Member not found. Please check your Hub ID.");
+  }
+  return res.json() as Promise<TinkerHubMember>;
+}
+
+/**
+ * Fetch all currently active check-ins.
+ * GET https://app-api.tinkerhub.org/checkin/active
+ */
+async function fetchActiveCheckins(): Promise<ActiveCheckIn[]> {
+  const cached = getCached<ActiveCheckIn[]>("activeCheckins");
+  if (cached) return cached;
+
+  const res = await fetch(`${TINKERHUB_API}/checkin/active`);
+  if (!res.ok) {
+    throw new Error("Failed to fetch active check-ins.");
+  }
+  const data = (await res.json()) as ActiveCheckIn[];
+  // Short TTL — 2 minutes so check-in status stays reasonably fresh
+  setCache("activeCheckins", data);
+  return data;
+}
+
+/**
+ * Validate that a user (by Hub username) is currently checked in.
+ *
+ * 1. Resolve username → member id
+ * 2. Check if that id appears in the active check-in list
+ *
+ * Returns { active: true, name } if checked in, { active: false } otherwise.
+ */
+export async function validateUserActive(
+  username: string,
+): Promise<{ active: boolean; name: string; avatar: string }> {
+  // Step 1: Resolve username to member id
+  const member = await fetchMemberByUsername(username);
+  const memberId = member.id;
+
+  // Step 2: Check active check-ins
+  const activeList = await fetchActiveCheckins();
+  const match = activeList.find(
+    (entry) => entry.mid === memberId || entry.membershipId === memberId,
+  );
+
+  if (match) {
+    return { active: true, name: match.name || member.name, avatar: member.avatar };
+  }
+
+  return { active: false, name: member.name, avatar: member.avatar };
+}

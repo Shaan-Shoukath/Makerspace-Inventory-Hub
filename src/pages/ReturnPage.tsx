@@ -1,5 +1,12 @@
-import { useState } from "react";
-import { CheckCircle, AlertCircle, Search, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import {
+  CheckCircle,
+  AlertCircle,
+  Search,
+  Loader2,
+  ShieldCheck,
+  ShieldX,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -10,7 +17,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { fetchUserHoldings, returnComponent, Holding } from "@/lib/api";
+import {
+  fetchUserHoldings,
+  returnComponent,
+  validateUserActive,
+  Holding,
+} from "@/lib/api";
 import { toast } from "sonner";
 
 const ReturnPage = () => {
@@ -22,18 +34,49 @@ const ReturnPage = () => {
   const [looking, setLooking] = useState(false);
   const [looked, setLooked] = useState(false);
 
+  // Verification state
+  const [verifying, setVerifying] = useState(false);
+  const [verified, setVerified] = useState<{
+    active: boolean;
+    name: string;
+    avatar: string;
+  } | null>(null);
+
   const selectedHolding = holdings.find(
     (h) => h.component === selectedComponent,
   );
 
-  const lookupHoldings = async () => {
+  // Reset verification and holdings when Hub ID changes
+  useEffect(() => {
+    setVerified(null);
+    setLooked(false);
+    setHoldings([]);
+    setSelectedComponent("");
+  }, [userHubId]);
+
+  const handleVerifyAndLookup = async () => {
     if (!userHubId.trim()) {
       toast.error("Enter your Hub ID first.");
       return;
     }
 
-    setLooking(true);
+    setVerifying(true);
     try {
+      // Step 1: Verify the user is checked in
+      const result = await validateUserActive(userHubId.trim());
+      setVerified(result);
+
+      if (!result.active) {
+        toast.error(
+          `${result.name}, you are not checked in at the Hub. Please check in first.`,
+        );
+        return;
+      }
+
+      toast.success(`Welcome, ${result.name}! You're checked in.`);
+
+      // Step 2: If active, also fetch their holdings
+      setLooking(true);
       const data = await fetchUserHoldings(userHubId.trim());
       setHoldings(data);
       setSelectedComponent("");
@@ -42,9 +85,13 @@ const ReturnPage = () => {
       if (data.length === 0) {
         toast.info("No active borrows found for this Hub ID.");
       }
-    } catch {
-      toast.error("Failed to fetch holdings. Please try again.");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Verification failed.";
+      toast.error(message);
+      setVerified(null);
     } finally {
+      setVerifying(false);
       setLooking(false);
     }
   };
@@ -52,9 +99,9 @@ const ReturnPage = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Client-side validation
-    if (!userHubId.trim()) {
-      toast.error("Please enter your Hub ID.");
+    // Must be verified and active
+    if (!verified?.active) {
+      toast.error("Please verify your Hub ID first.");
       return;
     }
     if (!selectedComponent) {
@@ -99,6 +146,8 @@ const ReturnPage = () => {
     }
   };
 
+  const isActive = verified?.active === true;
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mx-auto max-w-lg">
@@ -116,39 +165,72 @@ const ReturnPage = () => {
         </div>
 
         <div className="space-y-5 rounded-xl border bg-card p-6 shadow-sm">
-          {/* Lookup */}
+          {/* Hub ID + Verify */}
           <div className="space-y-2">
             <Label htmlFor="hubIdReturn">Your Hub ID</Label>
             <div className="flex gap-2">
               <Input
                 id="hubIdReturn"
-                placeholder="e.g. @dev_devadath"
+                placeholder="e.g. dev_devadath"
                 value={userHubId}
-                onChange={(e) => {
-                  setUserHubId(e.target.value);
-                  setLooked(false);
-                }}
-                maxLength={20}
+                onChange={(e) => setUserHubId(e.target.value)}
+                maxLength={30}
               />
               <Button
                 type="button"
                 variant="outline"
-                onClick={lookupHoldings}
+                onClick={handleVerifyAndLookup}
                 className="shrink-0"
-                disabled={looking}
+                disabled={verifying || looking || !userHubId.trim()}
               >
-                {looking ? (
+                {verifying || looking ? (
                   <Loader2 className="mr-1 h-4 w-4 animate-spin" />
                 ) : (
                   <Search className="mr-1 h-4 w-4" />
                 )}
-                Lookup
+                Verify & Lookup
               </Button>
             </div>
           </div>
 
-          {/* Holdings list */}
-          {looked && holdings.length > 0 && (
+          {/* Verification status */}
+          {verified && (
+            <div
+              className={`flex items-center gap-3 rounded-lg p-3 text-sm ${
+                isActive
+                  ? "bg-green-500/10 border border-green-500/20 text-green-700 dark:text-green-400"
+                  : "bg-destructive/10 border border-destructive/20 text-destructive"
+              }`}
+            >
+              {verified.avatar && (
+                <img
+                  src={verified.avatar}
+                  alt={verified.name}
+                  className="h-8 w-8 rounded-full object-cover"
+                />
+              )}
+              {isActive ? (
+                <ShieldCheck className="h-4 w-4 shrink-0" />
+              ) : (
+                <ShieldX className="h-4 w-4 shrink-0" />
+              )}
+              <span>
+                {isActive ? (
+                  <>
+                    <strong>{verified.name}</strong> — checked in and verified!
+                  </>
+                ) : (
+                  <>
+                    <strong>{verified.name}</strong> — not checked in. Please
+                    check in at the Hub first.
+                  </>
+                )}
+              </span>
+            </div>
+          )}
+
+          {/* Holdings list — only shown when user is verified active */}
+          {isActive && looked && holdings.length > 0 && (
             <>
               <div className="space-y-2">
                 <Label className="text-muted-foreground text-xs uppercase tracking-wider">
@@ -231,7 +313,7 @@ const ReturnPage = () => {
             </>
           )}
 
-          {looked && holdings.length === 0 && (
+          {isActive && looked && holdings.length === 0 && (
             <div className="rounded-lg bg-muted p-4 text-center text-sm text-muted-foreground">
               No active borrows found for <strong>{userHubId}</strong>.
             </div>
