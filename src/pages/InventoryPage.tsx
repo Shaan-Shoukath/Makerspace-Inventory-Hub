@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { Search, Package, AlertTriangle, Loader2, RefreshCw } from "lucide-react";
+import { Link } from "react-router-dom";
+import {
+  Search,
+  Package,
+  AlertTriangle,
+  Loader2,
+  RefreshCw,
+  Wrench,
+  RotateCcw,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,19 +68,14 @@ const InventoryPage = () => {
   useEffect(() => {
     const stale = getCachedLiveStock();
     if (stale && stale.length > 0) {
-      // Render stale data immediately — no loading spinner
       setStock(stale);
       setLoading(false);
-      // Silently refresh in the background
       setRefreshing(true);
       fetchLiveStock()
         .then(setStock)
-        .catch(() => {
-          /* keep showing stale data on background error */
-        })
+        .catch(() => {/* keep showing stale */})
         .finally(() => setRefreshing(false));
     } else {
-      // Nothing cached — full loading state
       loadStock();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -81,19 +85,14 @@ const InventoryPage = () => {
     item.component.toLowerCase().includes(search.toLowerCase()),
   );
 
-  // Reset to page 1 when search changes
   useEffect(() => {
     setCurrentPage(1);
   }, [search]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const paginatedItems = filtered.slice(
-    startIndex,
-    startIndex + ITEMS_PER_PAGE,
-  );
+  const paginatedItems = filtered.slice(startIndex, startIndex + ITEMS_PER_PAGE);
 
-  // Build page numbers with ellipsis
   const getPageNumbers = (): (number | "ellipsis")[] => {
     if (totalPages <= 7) {
       return Array.from({ length: totalPages }, (_, i) => i + 1);
@@ -110,42 +109,69 @@ const InventoryPage = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* Hero Banner */}
-      <div className="mb-8 rounded-2xl bg-gradient-to-br from-primary/10 via-accent to-secondary/10 p-6 md:p-8 border border-primary/10">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+
+      {/* ── Hero Banner ── */}
+      <div className="relative mb-8 overflow-hidden rounded-2xl glass-cyan p-6 md:p-8">
+        {/* Decorative glow blob */}
+        <div className="pointer-events-none absolute -top-12 -right-12 h-56 w-56 rounded-full bg-primary/10 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 left-1/2 h-32 w-64 -translate-x-1/2 rounded-full bg-primary/5 blur-2xl" />
+
+        <div className="relative flex flex-col md:flex-row md:items-start md:justify-between gap-6">
           <div>
-            <p className="text-sm font-handwritten text-primary text-lg mb-1">
-              est 2021 - Kochi
+            <p className="mb-1 font-handwritten text-lg text-primary/80">
+              est 2021 · Kochi
             </p>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-foreground leading-tight">
+            <h1 className="text-2xl md:text-3xl font-extrabold text-white leading-tight">
               Maker Station Inventory
             </h1>
-            <p className="text-muted-foreground mt-1 max-w-lg">
-              A playground for builders — browse all components available at
-              TinkerSpace. Packed with tools for tinkering, experimenting, and
-              creating something extraordinary.
+            <p className="mt-1.5 max-w-md text-sm text-white/50 leading-relaxed">
+              A playground for builders — browse every component at TinkerSpace.
+              Packed with tools for tinkering, experimenting, and creating
+              something extraordinary.
             </p>
+
+            {/* Quick-action CTAs */}
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link
+                to="/borrow"
+                className="flex items-center gap-2 rounded-lg border border-secondary/25 bg-secondary/10 px-4 py-2.5 text-sm font-semibold text-secondary transition-all duration-200 hover:bg-secondary/20 hover:border-secondary/35 hover:shadow-[0_0_16px_rgba(245,160,32,0.14)]"
+              >
+                <Wrench className="h-4 w-4" />
+                Borrow a Component
+                <span className="text-secondary/50">→</span>
+              </Link>
+              <Link
+                to="/return"
+                className="flex items-center gap-2 rounded-lg border border-success/25 bg-success/10 px-4 py-2.5 text-sm font-semibold text-success transition-all duration-200 hover:bg-success/20 hover:border-success/35 hover:shadow-[0_0_16px_rgba(34,197,94,0.14)]"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Return a Component
+                <span className="text-success/50">→</span>
+              </Link>
+            </div>
           </div>
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-primary shadow-lg">
-            <Package className="h-8 w-8 text-primary-foreground" />
+
+          <div className="shrink-0 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 ring-1 ring-primary/25 shadow-[0_0_24px_rgba(0,212,255,0.18)]">
+            <Package className="h-7 w-7 text-primary" />
           </div>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      {/* ── Search + Refresh bar ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
         <div className="relative max-w-md w-full">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
           <Input
             placeholder="Search by component name..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-10"
+            className="pl-10 bg-white/[0.04] border-white/[0.08] text-white placeholder:text-white/30 focus-visible:ring-primary/40 focus-visible:border-primary/30"
           />
         </div>
         <div className="flex items-center gap-3">
           {!loading && (
-            <p className="text-sm text-muted-foreground whitespace-nowrap">
-              Showing {filtered.length === 0 ? 0 : startIndex + 1}–
+            <p className="text-xs text-white/35 whitespace-nowrap">
+              {filtered.length === 0 ? 0 : startIndex + 1}–
               {Math.min(startIndex + ITEMS_PER_PAGE, filtered.length)} of{" "}
               {filtered.length} items
             </p>
@@ -155,7 +181,7 @@ const InventoryPage = () => {
             size="sm"
             onClick={() => loadStock(true)}
             disabled={refreshing}
-            className="shrink-0"
+            className="shrink-0 border-white/[0.09] bg-white/[0.03] text-white/60 hover:bg-white/[0.07] hover:text-white hover:border-white/15"
           >
             <RefreshCw
               className={`mr-1.5 h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
@@ -165,71 +191,77 @@ const InventoryPage = () => {
         </div>
       </div>
 
+      {/* ── Table / Loading ── */}
       {loading ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border bg-card py-24 shadow-sm">
+        <div className="flex flex-col items-center justify-center rounded-2xl glass-card py-28">
           <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
-          <p className="text-lg font-semibold text-foreground">
-            Loading inventory...
-          </p>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-base font-semibold text-white">Loading inventory…</p>
+          <p className="mt-1 text-sm text-white/40">
             Fetching latest stock from the database
           </p>
         </div>
       ) : (
         <>
-          <div className="rounded-xl border bg-card shadow-sm overflow-hidden relative">
+          <div className="rounded-2xl glass-card overflow-hidden relative">
+            {/* Shimmer progress bar while background-refreshing */}
             {refreshing && (
-              <div className="absolute inset-x-0 top-0 h-1 overflow-hidden rounded-t-xl">
-                <div className="h-full w-1/3 animate-[shimmer_1.2s_ease-in-out_infinite] bg-primary/40 rounded-full" />
+              <div className="absolute inset-x-0 top-0 h-[2px] overflow-hidden">
+                <div className="h-full w-1/3 animate-[shimmer_1.2s_ease-in-out_infinite] bg-primary/70 rounded-full" />
               </div>
             )}
+
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/50">
-                    <TableHead className="font-semibold w-12">#</TableHead>
-                    <TableHead className="font-semibold">Component</TableHead>
-                    <TableHead className="font-semibold">Case</TableHead>
-                    <TableHead className="font-semibold text-center">
+                  <TableRow className="border-white/[0.06] hover:bg-transparent">
+                    <TableHead className="w-12 text-[11px] font-semibold uppercase tracking-wider text-white/35">
+                      #
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-white/35">
+                      Component
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-white/35">
+                      Case
+                    </TableHead>
+                    <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wider text-white/35">
                       Stock
                     </TableHead>
-                    <TableHead className="font-semibold text-center">
+                    <TableHead className="text-center text-[11px] font-semibold uppercase tracking-wider text-white/35">
                       Status
                     </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedItems.length === 0 ? (
-                    <TableRow>
+                    <TableRow className="border-white/[0.04]">
                       <TableCell
                         colSpan={5}
-                        className="h-32 text-center text-muted-foreground"
+                        className="h-32 text-center text-white/35"
                       >
                         No components found.
                       </TableCell>
                     </TableRow>
                   ) : (
                     paginatedItems.map((item, i) => {
-                      const isLow =
-                        item.stock > 0 && item.stock <= LOW_STOCK_THRESHOLD;
+                      const isLow = item.stock > 0 && item.stock <= LOW_STOCK_THRESHOLD;
                       const isOut = item.stock === 0;
 
                       return (
                         <TableRow
                           key={item.component}
-                          className="hover:bg-muted/30 transition-colors"
+                          className="border-white/[0.04] hover:bg-white/[0.025] transition-colors"
                         >
-                          <TableCell className="text-muted-foreground text-xs">
+                          <TableCell className="text-[11px] text-white/25 font-mono">
                             {startIndex + i + 1}
                           </TableCell>
-                          <TableCell className="font-medium text-card-foreground">
+                          <TableCell className="font-medium text-white/90">
                             {item.component}
                           </TableCell>
-                          <TableCell className="text-muted-foreground text-sm">
+                          <TableCell className="text-sm text-white/40">
                             {item.caseName}
                           </TableCell>
                           <TableCell
-                            className={`text-center font-mono text-sm font-semibold ${
+                            className={`text-center font-mono text-sm font-semibold tabular-nums ${
                               isOut
                                 ? "text-destructive"
                                 : isLow
@@ -241,22 +273,16 @@ const InventoryPage = () => {
                           </TableCell>
                           <TableCell className="text-center">
                             {isOut ? (
-                              <Badge variant="destructive" className="text-xs">
+                              <Badge className="bg-destructive/10 text-destructive border border-destructive/20 text-[11px] font-medium">
                                 Out of stock
                               </Badge>
                             ) : isLow ? (
-                              <Badge
-                                variant="outline"
-                                className="text-xs border-secondary text-secondary"
-                              >
+                              <Badge className="bg-secondary/10 text-secondary border border-secondary/20 text-[11px] font-medium">
                                 <AlertTriangle className="mr-1 h-3 w-3" />
                                 Low stock
                               </Badge>
                             ) : (
-                              <Badge
-                                variant="outline"
-                                className="text-xs border-success text-success"
-                              >
+                              <Badge className="bg-success/10 text-success border border-success/20 text-[11px] font-medium">
                                 Available
                               </Badge>
                             )}
@@ -279,8 +305,8 @@ const InventoryPage = () => {
                       onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                       className={
                         currentPage === 1
-                          ? "pointer-events-none opacity-50"
-                          : "cursor-pointer"
+                          ? "pointer-events-none opacity-30"
+                          : "cursor-pointer text-white/60 hover:text-white hover:bg-white/[0.05] border-white/[0.08]"
                       }
                     />
                   </PaginationItem>
@@ -288,14 +314,18 @@ const InventoryPage = () => {
                   {getPageNumbers().map((page, idx) =>
                     page === "ellipsis" ? (
                       <PaginationItem key={`ellipsis-${idx}`}>
-                        <PaginationEllipsis />
+                        <PaginationEllipsis className="text-white/30" />
                       </PaginationItem>
                     ) : (
                       <PaginationItem key={page}>
                         <PaginationLink
                           isActive={page === currentPage}
                           onClick={() => setCurrentPage(page)}
-                          className="cursor-pointer"
+                          className={`cursor-pointer ${
+                            page === currentPage
+                              ? "bg-primary/15 text-primary border-primary/25"
+                              : "text-white/50 hover:text-white hover:bg-white/[0.05] border-white/[0.07]"
+                          }`}
                         >
                           {page}
                         </PaginationLink>
@@ -310,8 +340,8 @@ const InventoryPage = () => {
                       }
                       className={
                         currentPage === totalPages
-                          ? "pointer-events-none opacity-50"
-                          : "cursor-pointer"
+                          ? "pointer-events-none opacity-30"
+                          : "cursor-pointer text-white/60 hover:text-white hover:bg-white/[0.05] border-white/[0.08]"
                       }
                     />
                   </PaginationItem>

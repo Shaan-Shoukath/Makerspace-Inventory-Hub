@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   CheckCircle,
   AlertCircle,
   Loader2,
   ShieldCheck,
   ShieldX,
+  Package,
+  ChevronRight,
+  Wrench,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -35,7 +39,6 @@ const BorrowPage = () => {
   const [loadingCases, setLoadingCases] = useState(true);
   const [loadingComponents, setLoadingComponents] = useState(false);
 
-  // Verification state
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState<{
     active: boolean;
@@ -43,7 +46,6 @@ const BorrowPage = () => {
     avatar: string;
   } | null>(null);
 
-  // Load cases on mount
   useEffect(() => {
     setLoadingCases(true);
     fetchCases()
@@ -52,7 +54,6 @@ const BorrowPage = () => {
       .finally(() => setLoadingCases(false));
   }, []);
 
-  // Load components when case changes
   useEffect(() => {
     if (selectedCase) {
       setLoadingComponents(true);
@@ -68,7 +69,6 @@ const BorrowPage = () => {
     }
   }, [selectedCase]);
 
-  // Reset verification when Hub ID changes
   useEffect(() => {
     setVerified(null);
   }, [userHubId]);
@@ -78,7 +78,6 @@ const BorrowPage = () => {
       toast.error("Please enter your Hub ID.");
       return;
     }
-
     setVerifying(true);
     try {
       const result = await validateUserActive(userHubId.trim());
@@ -91,9 +90,7 @@ const BorrowPage = () => {
         );
       }
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Verification failed.";
-      toast.error(message);
+      toast.error(err instanceof Error ? err.message : "Verification failed.");
       setVerified(null);
     } finally {
       setVerifying(false);
@@ -102,8 +99,6 @@ const BorrowPage = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // Must be verified and active
     if (!verified?.active) {
       toast.error("Please verify your Hub ID first.");
       return;
@@ -129,12 +124,10 @@ const BorrowPage = () => {
         selectedComponent,
         quantity,
       );
-
       if (result.success) {
         toast.success(result.message, {
           icon: <CheckCircle className="h-4 w-4" />,
         });
-        // Reset form
         setUserHubId("");
         setSelectedCase("");
         setSelectedComponent("");
@@ -157,23 +150,48 @@ const BorrowPage = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mx-auto max-w-lg">
-        {/* Header */}
-        <div className="mb-8 rounded-2xl bg-gradient-to-br from-secondary/10 via-accent to-primary/5 p-6 border border-secondary/10">
-          <p className="text-sm font-handwritten text-secondary text-lg mb-1">
-            Maker vibes
-          </p>
-          <h1 className="text-2xl font-extrabold text-foreground">
-            Borrow Component
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Grab what you need to tinker, experiment, and create. Happy making!
-          </p>
+
+        {/* Breadcrumb */}
+        <div className="mb-6 flex items-center gap-1.5 text-xs text-white/35">
+          <Link
+            to="/"
+            className="flex items-center gap-1 hover:text-white/60 transition-colors"
+          >
+            <Package className="h-3.5 w-3.5" />
+            Inventory
+          </Link>
+          <ChevronRight className="h-3 w-3" />
+          <span className="text-white/60 font-medium">Borrow</span>
         </div>
 
-        <div className="space-y-5 rounded-xl border bg-card p-6 shadow-sm">
-          {/* Hub ID + Verify */}
+        {/* Hero header */}
+        <div className="relative mb-6 overflow-hidden rounded-2xl glass-amber p-6">
+          <div className="pointer-events-none absolute -top-10 -right-10 h-40 w-40 rounded-full bg-secondary/10 blur-3xl" />
+          <div className="relative flex items-start gap-4">
+            <div className="shrink-0 flex h-12 w-12 items-center justify-center rounded-xl bg-secondary/15 ring-1 ring-secondary/25 shadow-[0_0_20px_rgba(245,160,32,0.15)]">
+              <Wrench className="h-6 w-6 text-secondary" />
+            </div>
+            <div>
+              <p className="font-handwritten text-lg text-secondary/80 mb-0.5">Maker vibes</p>
+              <h1 className="text-2xl font-extrabold text-white">Borrow a Component</h1>
+              <p className="mt-1 text-sm text-white/45">
+                Grab what you need to tinker, experiment, and create. Happy making!
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Form card */}
+        <div className="glass-card rounded-2xl p-6 space-y-5">
+
+          {/* Step 1 — Verify Hub ID */}
           <div className="space-y-2">
-            <Label htmlFor="hubId">Your Hub ID</Label>
+            <Label
+              htmlFor="hubId"
+              className="text-xs font-semibold uppercase tracking-wider text-white/40"
+            >
+              Step 1 — Your Hub ID
+            </Label>
             <div className="flex gap-2">
               <Input
                 id="hubId"
@@ -181,38 +199,39 @@ const BorrowPage = () => {
                 value={userHubId}
                 onChange={(e) => setUserHubId(e.target.value)}
                 maxLength={30}
+                className="bg-white/[0.04] border-white/[0.08] text-white placeholder:text-white/25 focus-visible:ring-secondary/40 focus-visible:border-secondary/30"
+                onKeyDown={(e) => e.key === "Enter" && handleVerify()}
               />
               <Button
                 type="button"
-                variant="outline"
                 onClick={handleVerify}
-                className="shrink-0"
                 disabled={verifying || !userHubId.trim()}
+                className="shrink-0 bg-secondary/15 text-secondary border border-secondary/25 hover:bg-secondary/25 hover:border-secondary/35 disabled:opacity-40"
               >
                 {verifying ? (
-                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 ) : (
-                  <ShieldCheck className="mr-1 h-4 w-4" />
+                  <ShieldCheck className="mr-1.5 h-4 w-4" />
                 )}
                 Verify
               </Button>
             </div>
           </div>
 
-          {/* Verification status */}
+          {/* Verification status badge */}
           {verified && (
             <div
-              className={`flex items-center gap-3 rounded-lg p-3 text-sm ${
+              className={`flex items-center gap-3 rounded-xl p-3.5 text-sm ${
                 isActive
-                  ? "bg-green-500/10 border border-green-500/20 text-green-700 dark:text-green-400"
-                  : "bg-destructive/10 border border-destructive/20 text-destructive"
+                  ? "bg-success/8 border border-success/20 text-success"
+                  : "bg-destructive/8 border border-destructive/20 text-destructive"
               }`}
             >
               {verified.avatar && (
                 <img
                   src={verified.avatar}
                   alt={verified.name}
-                  className="h-8 w-8 rounded-full object-cover"
+                  className="h-8 w-8 rounded-full object-cover ring-1 ring-white/10 shrink-0"
                 />
               )}
               {isActive ? (
@@ -220,43 +239,53 @@ const BorrowPage = () => {
               ) : (
                 <ShieldX className="h-4 w-4 shrink-0" />
               )}
-              <span>
+              <span className="leading-snug">
                 {isActive ? (
                   <>
-                    <strong>{verified.name}</strong> — checked in and ready to
-                    borrow!
+                    <strong className="font-semibold">{verified.name}</strong>{" "}
+                    — checked in and ready to borrow!
                   </>
                 ) : (
                   <>
-                    <strong>{verified.name}</strong> — not checked in. Please
-                    check in at the Hub first.
+                    <strong className="font-semibold">{verified.name}</strong>{" "}
+                    — not checked in. Please check in at the Hub first.
                   </>
                 )}
               </span>
             </div>
           )}
 
-          {/* Borrow form — only shown when user is verified active */}
+          {/* Step 2 — Borrow form (shown only when active) */}
           {isActive && (
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+              <div className="mb-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-white/40">
+                  Step 2 — Select Component
+                </p>
+              </div>
+
               {/* Case */}
               <div className="space-y-2">
-                <Label>Case</Label>
+                <Label className="text-sm text-white/70">Case</Label>
                 <Select
                   value={selectedCase}
                   onValueChange={setSelectedCase}
                   disabled={loadingCases}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-white/[0.04] border-white/[0.08] text-white focus:ring-secondary/40 focus:border-secondary/30">
                     <SelectValue
                       placeholder={
-                        loadingCases ? "Loading cases..." : "Select a case"
+                        loadingCases ? "Loading cases…" : "Select a case"
                       }
                     />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-[#141414] border-white/[0.08] text-white">
                     {cases.map((c) => (
-                      <SelectItem key={c} value={c}>
+                      <SelectItem
+                        key={c}
+                        value={c}
+                        className="focus:bg-white/[0.06] focus:text-white"
+                      >
                         {c}
                       </SelectItem>
                     ))}
@@ -266,26 +295,30 @@ const BorrowPage = () => {
 
               {/* Component */}
               <div className="space-y-2">
-                <Label>Component</Label>
+                <Label className="text-sm text-white/70">Component</Label>
                 <Select
                   value={selectedComponent}
                   onValueChange={setSelectedComponent}
                   disabled={!selectedCase || loadingComponents}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-white/[0.04] border-white/[0.08] text-white focus:ring-secondary/40 focus:border-secondary/30">
                     <SelectValue
                       placeholder={
                         !selectedCase
                           ? "Select a case first"
                           : loadingComponents
-                            ? "Loading components..."
+                            ? "Loading components…"
                             : "Select component"
                       }
                     />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-[#141414] border-white/[0.08] text-white">
                     {components.map((name) => (
-                      <SelectItem key={name} value={name}>
+                      <SelectItem
+                        key={name}
+                        value={name}
+                        className="focus:bg-white/[0.06] focus:text-white"
+                      >
                         {name}
                       </SelectItem>
                     ))}
@@ -295,28 +328,32 @@ const BorrowPage = () => {
 
               {/* Quantity */}
               <div className="space-y-2">
-                <Label htmlFor="qty">Quantity</Label>
+                <Label htmlFor="qty" className="text-sm text-white/70">Quantity</Label>
                 <Input
                   id="qty"
                   type="number"
                   min={1}
                   value={quantity}
                   onChange={(e) => setQuantity(Number(e.target.value))}
+                  className="bg-white/[0.04] border-white/[0.08] text-white focus-visible:ring-secondary/40 focus-visible:border-secondary/30"
                 />
               </div>
 
               <Button
                 type="submit"
-                className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90"
                 disabled={submitting}
+                className="w-full bg-secondary/15 text-secondary border border-secondary/25 hover:bg-secondary/25 hover:border-secondary/35 font-semibold transition-all duration-200 hover:shadow-[0_0_20px_rgba(245,160,32,0.15)] disabled:opacity-40 mt-2"
               >
                 {submitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Borrowing...
+                    Borrowing…
                   </>
                 ) : (
-                  "Borrow Component"
+                  <>
+                    <Wrench className="mr-2 h-4 w-4" />
+                    Borrow Component
+                  </>
                 )}
               </Button>
             </form>
